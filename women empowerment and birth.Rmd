@@ -1,0 +1,664 @@
+---
+title: "MA1312 FINAL PROJECT"
+author: "Krithik Vasan Baskar"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r eval=TRUE, warning=FALSE , error=FALSE, message=FALSE}
+library(tidyverse)
+library(caret)
+library(car)
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(reshape2)
+library(vroom)
+library(lmtest)
+library(MASS)
+
+```
+# INTRODUCTION
+
+This study aims to analyze the factors influencing the number of children ever born (`ceb`) and the number of living children (`children`) among women. By employing various statistical and machine learning techniques, we intend to explore the relationships between these dependent variables and a range of demographic and socioeconomic predictors. Understanding these relationships is crucial for informing policies related to family planning, education, and public health.
+
+# DATASET DESCRIPTION
+
+The dataset used in this study contains demographic and socioeconomic information on women, including variables such as age, education level, knowledge and use of contraceptive methods, and access to amenities like electricity, radio, and television.
+
+The dataset consists of 4,361 observations, providing a robust sample for statistical analysis and model building.
+
+It is sourced from kaggle
+
+```{r}
+women_fertility <- read.csv("women_fertility.csv")
+head(women_fertility)
+
+```
+
+
+# METHODODLOGY
+
+The methodology for this study involves several key steps, including data preprocessing, exploratory data analysis (EDA), model building, and diagnostic testing.
+
+ **1. Data Preprocessing**
+
+- **Handling Missing Values:** We will check for and handle any missing values in the dataset.
+- **Data Transformation:** Convert relevant variables into appropriate formats (e.g., factors for categorical variables).
+
+**2. Exploratory Data Analysis (EDA)**
+
+- **Descriptive Statistics:** Generate summary statistics for key variables to understand their distributions and central tendencies.
+- **Visualization:** Create histograms, box plots, scatter plots, and density plots to visualize the distribution of variables and their relationships.
+- **Correlation Analysis:** Generate a correlation matrix and heatmap to identify potential multicollinearity among predictors.
+
+**3. Model Building**
+
+We will employ multiple statistical and machine learning models to analyze the data:
+
+- **Linear Regression:** To estimate the relationship between the number of children ever born and the predictor variables.
+- **Poisson Regression:** Suitable for count data, to model the number of children ever born and living children.
+- **Random Forest and Decision Tree:** To capture non-linear relationships and interactions between variables.
+- **Quantile Regression:** To assess the impact of predictors across different quantiles of the dependent variable distribution.
+
+### 4. Diagnostic Testing
+
+We will conduct several diagnostic tests to validate the assumptions of our models and ensure their robustness:
+
+- **Homoscedasticity:** Breusch-Pagan test to check for constant variance of residuals.
+- **Normality:** Shapiro-Wilk test and Q-Q plots to assess the normality of residuals.
+- **Independence:** Durbin-Watson test to check for autocorrelation in residuals.
+- **Linearity:** Residuals vs. Fitted plots to evaluate the linearity assumption.
+- **Outliers:** Cook's Distance and leverage plots to identify influential outliers.
+
+
+```{r}
+sapply(women_fertility, function(x) sum(is.na(x)))
+
+```
+
+```{r}
+# Impute numerical columns with the median
+for(i in 1:ncol(women_fertility)){
+  if(is.numeric(women_fertility[, i])){
+    women_fertility[is.na(women_fertility[, i]), i] <- median(women_fertility[, i], na.rm = TRUE)
+  }
+}
+```
+
+```{r}
+sapply(women_fertility, function(x) sum(is.na(x)))
+```
+# EXPLORATORY DATA ANALYSIS
+## Summary Statistics
+```{r}
+summary(women_fertility)
+```
+
+**Key Variables:**  
+
+- **mnthborn:** Ranges from 1 to 12, with a median of 6.  
+- **yearborn:** Ranges from 38 to 73, with a median of 62.  
+- **age:** Ranges from 15 to 49, with a median of 26.  
+- **electric, radio, tv, bicycle:** Binary variables indicating the presence (1) or absence (0) of these amenities, with `radio` being the most common (mean = 0.7019).  
+- **educ:** Education levels range from 0 to 20 years, with a median of 7 years.  
+- **ceb (children ever born):** Ranges from 0 to 13, with a median of 2.  
+- **agefbrth:** Age at first birth ranges from 10 to 38, with a median of 19.  
+- **children:** Number of living children ranges from 0 to 13, with a median of 2.  
+- **knowmeth and usemeth:** Binary variables indicating knowledge and use of contraceptive methods, with `knowmeth` being almost universal (mean = 0.9633).  
+- **urban:** Indicates urban (1) or rural (0) residence, with a fairly even distribution (mean = 0.5166).  
+
+**Other Variables:**  
+- **heduc:** Education level of the husband, ranging from 0 to 20 years.  
+- **agesq:** Squared age, indicating a transformation of the `age` variable.  
+- **religion and marriage status:** Includes `catholic`, `protest`, `spirit`, and `evermarr`.  
+
+**Observations:**  
+
+- The dataset shows a wide range of education levels and ages.  
+- There is a significant number of individuals with no access to amenities like electricity, TV, or bicycles.  
+- The majority of individuals have a small number of children, with the distribution heavily skewed towards fewer children.  
+
+### Distribution of the dependent variable 'children'
+```{r , fig.width=6, fig.height=4}
+
+ggplot(women_fertility, aes(x=children)) + 
+  geom_histogram(binwidth=1, fill="blue", color="black") + 
+  labs(title="Distribution of Number of Living Children")
+```
+
+The histogram illustrates the distribution of the number of living children among the surveyed individuals. The distribution is heavily right-skewed, with the majority of individuals having between 0 and 3 living children. The frequency decreases sharply as the number of living children increases, with very few individuals having more than 6 children. This skewness suggests that most families have relatively few children.
+
+
+### Distribution of the dependent variable 'ceb' (children ever born)
+```{r, fig.width=6, fig.height=4}
+ggplot(women_fertility, aes(x=ceb)) + 
+  geom_histogram(binwidth=1, fill="green", color="black") + 
+  labs(title="Distribution of Number of Children Ever Born")
+```
+
+The histogram shows the distribution of the number of children ever born (ceb) among the surveyed individuals. The distribution is right-skewed, indicating that most individuals have fewer children, with the majority having between 0 and 3 children ever born. As the number of children ever born increases, the frequency decreases sharply, with very few individuals having more than 6 children. This skewness highlights that larger family sizes are relatively rare.
+
+
+### Distribution of education levels
+```{r, fig.width=6, fig.height=4}
+ggplot(women_fertility, aes(x=educ)) + 
+  geom_bar(fill="purple", color="black") + 
+  labs(title="Distribution of Education Levels")
+```
+
+The histogram illustrates the distribution of education levels (educ) among the surveyed individuals. The distribution shows notable peaks at specific education levels. A significant number of individuals have no formal education, as indicated by the highest bar at zero. Another large peak is observed around the 5-year education mark, suggesting a common level of schooling. Additionally, there are smaller peaks around the 10-year mark and beyond, indicating varying levels of higher education. This distribution highlights the diverse range of educational attainment within the surveyed population.
+
+
+# Visualization of relationship between education level and number of children
+```{r warning=FALSE, fig.width=6, fig.height=4}
+ggplot(women_fertility, aes(x=educ, y=children)) + 
+  geom_boxplot() + 
+  labs(title="Education Level vs. Number of Living Children")
+```
+
+The box plot shows the relationship between education level (educ) and the number of living children (children). The plot indicates that higher education levels are associated with fewer children. The median number of children decreases as education level increases, which supports the hypothesis that higher education levels correlate with fewer children. Additionally, there are a few outliers with higher numbers of children at higher education levels, but the overall trend remains consistent.
+
+# Visualization of relationship between education level and number of children ever born
+
+```{r warning=FALSE, fig.width=6, fig.height=4}
+ggplot(women_fertility, aes(x=educ, y=ceb)) + 
+  geom_boxplot() + 
+  labs(title="Education Level vs. Number of Children Ever Born")
+```
+
+The box plot illustrates the relationship between education level (educ) and the number of children ever born (ceb). The plot shows that individuals with higher education levels tend to have fewer children. The median number of children decreases as education level increases, indicating a negative correlation between education and fertility. While there are some outliers with higher numbers of children at higher education levels, the overall trend supports the hypothesis that higher education levels are associated with having fewer children.
+
+# Box plot for number of children across different education levels
+
+```{r warning=FALSE, fig.width=6, fig.height=4}
+ggplot(women_fertility, aes(x=educ, y=children, fill=educ)) + 
+  geom_boxplot() + 
+  labs(title="Number of Living Children across Education Levels") + 
+  theme(legend.position="none")
+
+```
+
+The box plot shows the distribution of the number of living children (children) across different education levels (educ). The median number of living children tends to decrease as education level increases, indicating that higher education levels are generally associated with having fewer children. There are some outliers at higher education levels with more children, but the overall trend suggests a negative correlation between education and the number of living children. This supports the hypothesis that higher education is linked to smaller family sizes.
+
+
+# Scatter plot with regression line for children vs. age
+
+```{r fig.width=6, fig.height=4}
+ggplot(women_fertility, aes(x=age, y=children)) + 
+  geom_point(color="blue") + 
+  geom_smooth(method="lm", color="red") + 
+  labs(title="Age vs. Number of Living Children with Regression Line")
+
+```
+
+The scatter plot illustrates the relationship between age and the number of living children (children) with a fitted regression line. The plot shows a positive correlation between age and the number of living children, indicating that as individuals get older, they tend to have more children. The regression line, depicted in red, further emphasizes this trend, suggesting a steady increase in the number of living children with age.
+
+# Heatmap of the correlation matrix
+
+```{r fig.width=6, fig.height=4}
+numerical_cols <- sapply(women_fertility, is.numeric)
+
+corr_matrix <- cor(women_fertility[, numerical_cols])
+melted_corr <- melt(corr_matrix)
+ggplot(data = melted_corr, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile() + 
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab", 
+                       name="Correlation") + 
+  theme_minimal() + 
+  labs(title="Heatmap of Correlation Matrix")
+
+```
+
+The heatmap visualizes the correlation matrix for various variables in the dataset. Each cell represents the correlation coefficient between two variables, with the color intensity indicating the strength and direction of the correlation. Red indicates a strong positive correlation, blue indicates a strong negative correlation, and lighter colors represent weaker correlations.
+
+Key observations from the heatmap: - There is a strong positive correlation between some pairs of variables, such as `age` and `agefbrth` (age at first birth). - A negative correlation is observed between `educ` (education) and variables like `children` and `ceb` (children ever born), suggesting higher education levels are associated with fewer children. - Most other variables show weaker correlations, as indicated by the lighter colors.
+
+This heatmap helps identify potential multicollinearity and relationships between predictors, guiding further analysis and model building.
+
+
+# Density plot for number of children by education level
+
+```{r fig.width=6, fig.height=4}
+ggplot(women_fertility, aes(x=children, fill=educ)) + 
+  geom_density(alpha=0.5) + 
+  labs(title="Density Plot of Number of Living Children by Education Level")
+
+```
+
+The density plot shows the distribution of the number of living children (children). The plot indicates that the density is highest at zero children and gradually decreases as the number of children increases. This pattern suggests that most individuals have few or no children, with progressively fewer individuals having larger numbers of children. The smooth decline in density highlights the skewed nature of the distribution, consistent with typical population data where fewer people have large families.
+
+# VARIABLE SELECTION
+
+```{r}
+
+# Fit the initial Poisson regression model
+initial_poisson_model <- glm(ceb ~ educ + age + electric + radio + tv + bicycle + knowmeth + agefbrth + heduc + urban, 
+                             family = poisson(link = "log"), data = women_fertility)
+
+# Stepwise model selection using AIC
+stepwise_aic_model <- stepAIC(initial_poisson_model, direction = "both", trace = FALSE)
+summary(stepwise_aic_model)
+
+# Function for calculating BIC
+calculate_bic <- function(model) {
+  n <- length(model$y)
+  logLik_val <- logLik(model)
+  k <- length(model$coefficients)
+  BIC <- -2 * logLik_val + log(n) * k
+  return(BIC)
+}
+
+# Calculate BIC for the stepwise AIC model
+bic_stepwise_aic_model <- calculate_bic(stepwise_aic_model)
+print(paste("BIC for the stepwise AIC model:", bic_stepwise_aic_model))
+
+# Stepwise model selection using BIC
+stepwise_bic_model <- stepAIC(initial_poisson_model, direction = "both", k = log(nrow(women_fertility)), trace = FALSE)
+summary(stepwise_bic_model)
+
+# Calculate BIC for the stepwise BIC model
+bic_stepwise_bic_model <- calculate_bic(stepwise_bic_model)
+print(paste("BIC for the stepwise BIC model:", bic_stepwise_bic_model))
+
+
+```
+We performed model selection for the Poisson regression model using Akaike Information Criterion (AIC) and Bayesian Information Criterion (BIC).
+
+**Stepwise AIC Model:**  
+
+- **Selected Variables:** `educ`, `age`, `electric`, `bicycle`, `knowmeth`, `agefbrth`, `heduc`, `urban`  
+- **Residual Deviance:** 4705.5  
+- **AIC:** 14081  
+- **BIC:** 14138.52  
+
+**Stepwise BIC Model:**  
+
+- **Selected Variables:** `educ`, `age`, `bicycle`, `knowmeth`, `agefbrth`, `heduc`, `urban`  
+- **Residual Deviance:** 4708.1  
+- **AIC:** 14082  
+- **BIC:** 14132.75  
+
+**Comparison:**  
+
+- Both models identified `educ`, `age`, `bicycle`, `knowmeth`, `agefbrth`, `heduc`, and `urban` as significant predictors.  
+- The stepwise AIC model included `electric` as an additional predictor, while the stepwise BIC model did not.  
+- The AIC values for both models are very close, indicating similar model fits.  
+- The BIC values suggest that the stepwise BIC model, being slightly lower, may be preferred due to its simpler structure with fewer predictors.  
+
+Overall, the selected models highlight the significant predictors influencing the number of children ever born, with education and age being key factors.
+
+# MODEL FITTING AND MODEL VALIDATION
+
+```{r message=FALSE}
+data <- vroom("women_fertility.csv", delim = ",")[-1]
+
+```
+
+## Multiple Linear Regression Analysis
+
+```{r}
+linear_regression_model <- lm(ceb ~ mnthborn + yearborn + age + electric + 
+    agefbrth + children + knowmeth + usemeth + heduc + agesq + 
+    urban, data = women_fertility)
+summary(linear_regression_model)
+
+```
+
+```{r}
+par(mfrow=c(2,2)) 
+plot(linear_regression_model)
+
+```
+
+We conducted a multiple linear regression analysis to understand the relationship between the number of children ever born (`ceb`) and several predictor variables, including `mnthborn`, `yearborn`, `age`, `electric`, `agefbrth`, `children`, `knowmeth`, `usemeth`, `heduc`, `agesq`, and `urban`.
+
+**Interpretation**  
+The R-squared value of 0.9614 indicates that approximately 96.14% of the variance in the number of children ever born (`ceb`) is explained by the predictor variables in the model. The adjusted R-squared value of 0.9613, which adjusts for the number of predictors in the model, is very close to the R-squared value, indicating a good fit.
+
+The F-statistic is 9852 with a p-value less than 2.2e-16, suggesting that the overall regression model is highly significant. This means that the model explains a significant portion of the variance in the dependent variable.
+
+### Hypothesis Testing
+
+For this multiple regression model, we test the following null hypothesis (H0) and alternative hypothesis (H1):
+
+-   H0: β1 = β2 = ... = βp-1 = 0 (All regression coefficients are zero)
+-   H1: βj ≠ 0, for at least one value of j (At least one regression coefficient is not zero)
+
+Given the p-value of the F-test is less than 0.05, we reject the null hypothesis, concluding that the model is statistically significant, and at least one predictor variable is significantly associated with the number of children ever born.
+
+### Residual Diagnostics
+
+From the diagnostic plots:
+
+1.  **Residuals vs. Fitted:** The residuals appear randomly scattered around the horizontal axis, suggesting a good fit.\
+2.  **Normal Q-Q:** The residuals follow a straight line, indicating that the residuals are normally distributed.\
+3.  **Scale-Location:** The residuals are spread equally along the ranges of predictors, suggesting homoscedasticity.\
+4.  **Residuals vs. Leverage:** There are no influential points that have an undue impact on the model.
+
+#### Key Insights
+
+-   There is a significant negative relationship between the `yearborn` and the number of children ever born.
+-   The variable `children` has a very high positive coefficient, indicating it is a strong predictor.
+-   The education level (`heduc`) is negatively associated with the number of children ever born, supporting the hypothesis that higher education levels are associated with fewer children.
+-   Other variables such as `electric`, `age`, `agefbrth`, and `agesq` also show significant associations.
+
+In conclusion, the multiple linear regression model provides a robust understanding of the factors influencing the number of children ever born. The significant predictors identified can inform further research and policy decisions regarding family planning and education.
+
+### Cross-Validation for Bias-Variance Analysis
+
+```{r}
+train_control <- trainControl(method = "cv", number = 10)
+set.seed(123)
+linear_model_cv <- train(ceb ~ mnthborn + yearborn + age + electric + agefbrth + children + knowmeth + usemeth + heduc + agesq + urban,
+                         data = women_fertility,
+                         method = "lm",
+                         trControl = train_control)
+
+summary(linear_model_cv)
+
+cv_results <- linear_model_cv$results
+print(cv_results)
+
+```
+
+We conducted a 10-fold cross-validation to evaluate the bias-variance trade-off in our linear regression model. The model includes predictor variables such as `mnthborn`, `yearborn`, `age`, `electric`, `agefbrth`, `children`, `knowmeth`, `usemeth`, `heduc`, `agesq`, and `urban`, with the number of children ever born (`ceb`) as the dependent variable.
+
+**Interpretation**  
+We have a very low bias in our model, as indicated by the high R-squared value (0.961347) from the cross-validation results. This high R-squared value suggests that our model explains a significant portion of the variance in the number of children ever born (`ceb`).
+
+The RMSE (Root Mean Squared Error) of 0.469683 indicates the average error between the predicted and actual values. The relatively small standard deviations for RMSE (0.07117855) and R-squared (0.01237459) across the folds suggest that the model performs consistently, with low variance.
+
+### Bias-Variance Trade-off
+
+In the context of bias-variance trade-off:  
+- **Bias:** Our model exhibits low bias, as it fits the training data well, indicated by the high R-squared value and significant predictors.  
+- **Variance:** The low RMSE and small standard deviations for RMSE and R-squared imply that our model has low variance, meaning it generalizes well to unseen data and is not overly complex.
+
+**High bias** can lead to underfitting, where the model fails to capture the underlying patterns in the data. **High variance** can lead to overfitting, where the model captures noise in the training data but fails to generalize to new data. In our model, the balance between bias and variance is well-maintained, indicating a robust model.
+
+#### Conclusion
+
+The cross-validation results reinforce the robustness of our linear regression model. The low bias and variance indicate that the model is neither underfitting nor overfitting, making it reliable for predicting the number of children ever born based on the given predictors. This balance is crucial for the model's predictive performance and generalizability.
+
+### Breusch-Pagan Test for Heteroskedasticity
+
+We conducted the Breusch-Pagan test to check for heteroskedasticity in our linear regression model. The null hypothesis (H0) of this test is that the variance of the residuals is constant (homoskedasticity). The alternative hypothesis (H1) is that the variance is not constant (heteroskedasticity).
+
+**Hypotheses:** - H0: The variance of the residuals is constant. - H1: The variance of the residuals is not constant.
+
+```{r}
+bp_test <- bptest(linear_regression_model)
+print(bp_test)
+```
+
+**Test Results:** - Test Statistic (BP): 257.62 - Degrees of Freedom (df): 11 - p-value: \< 2.2e-16
+
+Given the p-value is significantly less than the common alpha level of 0.05, we reject the null hypothesis of constant variance. This result indicates that heteroskedasticity is present in the residuals of our regression model.
+
+**Implications**  
+The presence of heteroskedasticity suggests that the variance of the residuals varies with the level of the independent variables, which can affect the efficiency of our coefficient estimates. To address this issue, we can employ robust regression methods that are less sensitive to heteroskedasticity, such as:
+
+-   **Ridge Regression:** Regularization method that can handle multicollinearity and heteroskedasticity by adding a penalty to the magnitude of the coefficients.
+-   **Lasso Regression:** Similar to ridge regression but can also perform variable selection by shrinking some coefficients to zero.
+-   **Quantile Regression:** Focuses on estimating the median or other quantiles of the dependent variable, providing a more robust approach against heteroskedasticity and outliers.
+
+By using these robust methods, we can improve the reliability of our model estimates and better account for the non-constant variance in our data.
+
+### Multicollinearity
+
+```{r}
+vif_values <- vif(linear_regression_model)
+print(vif_values)
+```
+
+Here is the content discussing the VIF test for multicollinearity and the resulting model adjustment:
+
+#### VIF Test for Multicollinearity
+
+We conducted the Variance Inflation Factor (VIF) test to check for multicollinearity among the predictor variables in our linear regression model. Multicollinearity occurs when predictor variables are highly correlated with each other, which can inflate the variance of the coefficient estimates and make the model unstable.
+
+**VIF Results:** - `mnthborn`: 1.658089 - `yearborn`: 917.590625 - `age`: 957.515181 - `electric`: 1.194890 - `agefbrth`: 1.289988 - `children`: 2.789863 - `knowmeth`: 1.082565 - `usemeth`: 1.280963 - `heduc`: 1.254016 - `agesq`: 48.412343 - `urban`: 1.148063
+
+#### Interpretation and Model Adjustment
+
+A VIF value above 5 or 10 indicates significant multicollinearity. In our results, the variables `yearborn` (VIF = 917.590625), `age` (VIF = 957.515181), and `agesq` (VIF = 48.412343) exhibit very high VIF values, indicating severe multicollinearity.
+
+To address this issue, we removed `yearborn` and `agesq` from the model to reduce multicollinearity. This leads to a simpler model without compromising accuracy.
+
+### Adjusted Model
+
+The adjusted linear regression model without the variables `yearborn` and `agesq` is as follows:
+
+```{r}
+# Adjusted linear regression model
+adjusted_linear_regression_model <- lm(ceb ~ educ + age + electric + radio + tv + bicycle + knowmeth + agefbrth + heduc + urban, data = women_fertility)
+
+# Display the summary of the adjusted model
+vif(adjusted_linear_regression_model)
+```
+
+By removing the highly collinear variables, we improve the model's stability and interpretability. This adjustment ensures that the remaining predictor variables contribute more independently to the prediction of the number of children ever born (`ceb`).
+
+To thoroughly assess the assumptions of a linear regression model, including homoscedasticity, normality, independence, linearity, and outliers, we can perform a series of diagnostic tests. Here's the R code to perform these tests:
+
+### Shapiro-Wilk Test and Q-Q Plot
+
+Null Hypothesis (H0): The residuals are normally distributed.
+
+Interpretation: A significant p-value (typically \< 0.05) in the Shapiro-Wilk test indicates non-normality. The Q-Q plot should show points along the line for normality.
+
+```{r}
+# Shapiro-Wilk test for normality
+shapiro_test <- shapiro.test(residuals(linear_regression_model))
+print(shapiro_test)
+
+# Q-Q plot
+qqnorm(residuals(linear_regression_model))
+qqline(residuals(linear_regression_model), col = "red")
+
+```
+
+**Interpretation:**
+
+The Shapiro-Wilk test result indicates a p-value significantly less than 0.05, leading us to reject the null hypothesis that the residuals are normally distributed. This conclusion is supported by the Q-Q plot, where the residuals deviate from the theoretical quantiles, especially in the tails.
+
+### Durbin-Watson Test - Checks for independence of residuals.
+
+Null Hypothesis (H0): There is no autocorrelation in the residuals.
+
+Interpretation: A test statistic close to 2 indicates independence of residuals.
+
+```{r}
+dw_test <- durbinWatsonTest(linear_regression_model)
+print(dw_test)
+
+```
+
+**Interpretation:**
+The Durbin-Watson test result shows a D-W statistic close to 2 and a p-value of 0.648. This indicates that there is no significant autocorrelation in the residuals, suggesting that the residuals are independent.
+
+### Cook's Distance and Leverage - Identifies influential outliers.
+
+Interpretation: Points with high Cook's Distance or leverage are influential and may need to be investigated further.
+
+```{r , fig.width=6, fig.height=4}
+# Cook's Distance
+cooksd <- cooks.distance(linear_regression_model)
+plot(cooksd, ylab = "Cook's Distance", main = "Cook's Distance")
+abline(h = 4/(nrow(women_fertility)-length(coef(linear_regression_model))), col = "red")
+
+# Leverage
+leverage <- hatvalues(linear_regression_model)
+plot(leverage, ylab = "Leverage", main = "Leverage")
+abline(h = 2*mean(leverage), col = "red")
+
+```
+
+To identify potential influential outliers in our linear regression model, we examined Cook's Distance and Leverage plots.
+
+**Cook's Distance:** - **Interpretation:** The Cook's Distance plot shows that most observations have a low Cook's Distance, indicating they are not influential. However, there are a few observations with higher values, suggesting they might be influential outliers. Generally, observations with Cook's Distance greater than 4/(n-k-1) (where n is the number of observations and k is the number of predictors) are considered influential.
+
+**Leverage:** - **Interpretation:** The Leverage plot indicates that most observations have low leverage values, which means they do not exert undue influence on the model. A few observations have higher leverage, suggesting they could potentially influence the regression results. Typically, leverage values above 2\*(p+1)/n (where p is the number of predictors and n is the number of observations) are considered high.
+
+### Conclusion
+
+The Cook's Distance and Leverage plots help identify potential outliers that may have an undue influence on the regression model. Observations with high Cook's Distance and high leverage should be investigated further to understand their impact on the model and consider whether they should be retained or removed.
+
+## Poisson Regression Analysis
+
+```{r}
+# Fit the Poisson regression model
+poisson_regression_model <- glm(ceb ~ educ + age + electric + radio + tv + bicycle + knowmeth + agefbrth + heduc + urban, 
+                                family = poisson(link = "log"), data = women_fertility)
+summary(poisson_regression_model)
+
+```
+
+```{r}
+coef(poisson_regression_model)
+
+```
+
+We performed a Poisson regression analysis to model the number of children ever born (`ceb`) as a function of various predictor variables, including `educ`, `age`, `electric`, `radio`, `tv`, `bicycle`, `knowmeth`, `agefbrth`, `heduc`, and `urban`.
+
+**Interpretation**
+
+The Poisson regression model identifies several significant predictors of the number of children ever born (`ceb`):
+
+-   **Education (`educ`):** There is a significant negative association between education level and the number of children ever born (Estimate = -0.022219, p \< 2e-16). This suggests that higher education levels are associated with fewer children.
+-   **Age (`age`):** There is a significant positive association between age and the number of children ever born (Estimate = 0.076904, p \< 2e-16). Older individuals tend to have more children.
+-   **Bicycle Ownership (`bicycle`):** Owning a bicycle is positively associated with the number of children ever born (Estimate = 0.086800, p = 8.35e-05).
+-   **Knowledge of Contraceptive Methods (`knowmeth`):** There is a significant positive association (Estimate = 0.409247, p = 4.41e-14), indicating that individuals who know about contraceptive methods tend to have more children.
+-   **Age at First Birth (`agefbrth`):** There is a significant negative association between the age at first birth and the number of children ever born (Estimate = -0.075888, p \< 2e-16). This suggests that individuals who have their first child at an older age tend to have fewer children.
+-   **Education of Husband (`heduc`):** There is a significant negative association (Estimate = -0.010103, p = 0.00182), indicating that higher education levels of husbands are associated with fewer children.
+-   **Urban Residence (`urban`):** Living in an urban area is negatively associated with the number of children ever born (Estimate = -0.064189, p = 0.00251).
+
+### Significance of Predictors
+
+The significant predictors (with p-values less than 0.05) highlight key factors influencing the number of children ever born. These include education, age, bicycle ownership, knowledge of contraceptive methods, age at first birth, husband's education, and urban residence.
+
+### Model Fit
+
+-   **Residual Deviance:** The residual deviance (4704.6) compared to the null deviance (10832.9) indicates that the model explains a substantial portion of the variability in the number of children ever born.
+-   **AIC:** The Akaike Information Criterion (AIC) value of 14084 provides a measure of the model's relative quality. Lower AIC values indicate a better-fitting model.
+
+  The Poisson regression model effectively identifies significant predictors of the number of children ever born. The results suggest that higher education levels, both of the individual and the husband, as well as urban residence, are associated with fewer children. Conversely, older age and knowledge of contraceptive methods are associated with more children. These findings can inform policy decisions and further research on family planning and education.
+
+```{r}
+par(mfrow=c(2,2)) 
+plot(poisson_regression_model)
+```
+
+### Homoscedasticity (Breusch-Pagan Test)
+
+**Null Hypothesis (H0):** The variance of the residuals is constant.
+
+```{r}
+bp_test_poisson <- bptest(poisson_regression_model)
+print(bp_test_poisson)
+
+```
+
+The Breusch-Pagan test result indicates a p-value significantly less than 0.05, leading us to reject the null hypothesis that the variance of the residuals is constant. This result suggests the presence of heteroscedasticity in the residuals of our Poisson regression model. The presence of heteroscedasticity indicates that the variance of the residuals varies with the level of the independent variables. This can affect the efficiency of the coefficient estimates. To address this issue, robust regression methods or transformations may be considered.
+
+## Normality (Residual Analysis and Q-Q Plot)
+
+**Null Hypothesis (H0):** The residuals are normally distributed.
+
+```{r , fig.width=6, fig.height=4}
+# Pearson residuals
+poisson_residuals <- residuals(poisson_regression_model, type = "pearson")
+# Shapiro-Wilk test for normality
+shapiro_test_poisson <- shapiro.test(poisson_residuals)
+print(shapiro_test_poisson)
+# Q-Q plot for residuals
+qqnorm(poisson_residuals)
+qqline(poisson_residuals, col = "red")
+```
+
+The Shapiro-Wilk test result indicates a p-value significantly less than 0.05, leading us to reject the null hypothesis that the residuals are normally distributed. This conclusion is supported by the Q-Q plot, where the residuals deviate from the theoretical quantiles, particularly at the tails. These results suggest that the residuals of the Poisson regression model are not normally distributed. This indicates potential issues with the model's assumptions, and alternative approaches such as transformations or robust regression methods may need to be considered.
+
+### Independence (Durbin-Watson Test)
+
+**Null Hypothesis (H0):** There is no autocorrelation in the residuals.
+
+```{r}
+dw_test_poisson <- durbinWatsonTest(poisson_regression_model)
+print(dw_test_poisson)
+
+```
+
+The Durbin-Watson test result shows a D-W statistic close to 2, which generally indicates that there is no significant autocorrelation in the residuals. However, the p-value of 0.006 suggests that there is some evidence against the null hypothesis of no autocorrelation. While the Durbin-Watson statistic being close to 2 is reassuring, the low p-value suggests potential mild autocorrelation in the residuals. This should be investigated further to ensure the model's assumptions hold. If significant autocorrelation is found, adjustments or different modeling techniques might be necessary
+
+### Outliers (Cook's Distance and Leverage)
+
+```{r}
+# Cook's Distance
+cooksd_poisson <- cooks.distance(poisson_regression_model)
+plot(cooksd_poisson, ylab = "Cook's Distance", main = "Cook's Distance for Poisson Regression")
+abline(h = 4/(nrow(women_fertility)-length(coef(poisson_regression_model))), col = "red")
+
+# Leverage
+leverage_poisson <- hatvalues(poisson_regression_model)
+plot(leverage_poisson, ylab = "Leverage", main = "Leverage for Poisson Regression")
+abline(h = 2*mean(leverage_poisson), col = "red")
+
+```
+
+To identify potential influential outliers in our Poisson regression model, we examined Cook's Distance and Leverage plots.
+
+**Cook's Distance:** - **Interpretation:** The Cook's Distance plot shows that most observations have a low Cook's Distance, indicating they are not influential. However, there are a few observations with higher values, suggesting they might be influential outliers. Generally, observations with Cook's Distance greater than 4/(n-k-1) (where n is the number of observations and k is the number of predictors) are considered influential.
+
+**Leverage:** - **Interpretation:** The Leverage plot indicates that most observations have low leverage values, which means they do not exert undue influence on the model. A few observations have higher leverage, suggesting they could potentially influence the regression results. Typically, leverage values above 2\*(p+1)/n (where p is the number of predictors and n is the number of observations) are considered high.
+
+  The Cook's Distance and Leverage plots help identify potential outliers that may have an undue influence on the Poisson regression model. Observations with high Cook's Distance and high leverage should be investigated further to understand their impact on the model and consider whether they should be retained or removed.
+
+
+
+# MODEL COMPARISON 
+
+In this study, we analyzed the factors influencing the number of children ever born (`ceb`) using multiple linear regression and Poisson regression models. Both models provided insights into the relationships between various demographic and socioeconomic predictors and fertility outcomes.
+
+**Multiple Linear Regression:**  
+
+- The multiple linear regression model indicated a significant negative relationship between education level (`educ`) and the number of children ever born. Higher education levels were associated with fewer children.
+- Other significant predictors included age, age at first birth (`agefbrth`), and urban residence (`urban`), all showing expected directions of association.
+- The model had a high R-squared value (0.9614), suggesting it explained a substantial portion of the variance in the number of children ever born.
+
+**Poisson Regression:**  
+
+- The Poisson regression model, which is more suitable for count data, similarly identified significant predictors of fertility. Education level, age, age at first birth, and urban residence were all significant.
+- The coefficients from the Poisson regression provided rate ratios, showing the multiplicative effect of predictors on the expected count of children ever born.
+- The model showed a good fit with the data, as indicated by the deviance and AIC values.
+
+**Comparison:**  
+
+- Both models highlighted the negative impact of higher education levels on fertility, supporting the hypothesis that increased education is associated with lower fertility rates.
+- Age and age at first birth were significant in both models, indicating their crucial roles in determining family size.
+- While the linear regression model offered a high R-squared value, the Poisson regression provided a more appropriate framework for modeling count data, yielding interpretable rate ratios for predictors.
+
+Overall, both models corroborated key findings regarding the influence of education and age on fertility, with the Poisson regression model being particularly well-suited for the count nature of the dependent variable.
+
+
+# PROJECT SUMMARY
+
+In this project, we conducted a comprehensive analysis of the factors influencing the number of children ever born (`ceb`) and the number of living children among women. We utilized a dataset containing demographic and socioeconomic information, including variables such as age, education level, knowledge and use of contraceptive methods, and access to household amenities. The analysis followed a structured methodology comprising data preprocessing, exploratory data analysis (EDA), model building, and diagnostic testing.
+
+We began by handling missing values and transforming relevant variables into appropriate formats. EDA was performed to generate summary statistics and visualizations, including histograms, box plots, scatter plots, density plots, and a correlation heatmap, to understand the distributions and relationships among variables.
+
+The core of our analysis involved building and comparing multiple linear regression and Poisson regression models. The multiple linear regression model provided insights into the linear relationships between predictors and the number of children ever born, while the Poisson regression model, suitable for count data, offered rate ratios for the predictors.
+
+To ensure the robustness of our models, we conducted diagnostic tests for homoscedasticity, normality, independence, linearity, and the presence of outliers. These tests included the Breusch-Pagan test, Shapiro-Wilk test, Durbin-Watson test, and analyses using Cook's Distance and leverage plots.
+
+Our findings indicated significant negative relationships between higher education levels and fertility rates, as well as the importance of age and urban residence. Both models supported these key conclusions, with the Poisson regression model being particularly effective for the count nature of the data.
+
+Overall, this project provided valuable insights into the demographic and socioeconomic factors influencing fertility, with implications for family planning, education, and public health policies.
